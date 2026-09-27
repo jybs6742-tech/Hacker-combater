@@ -1,5 +1,7 @@
---// TELEPORT MENU - MOBILE extreml
+--// TELEPORT MENU - MOBILE / PC
 --// ORBIT + LOCK ON + HIGHLIGHT ESP
+--// PLAYERS + NPCs
+--// N = MOSTRAR/OCULTAR NPCs
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -11,7 +13,7 @@ local Camera = workspace.CurrentCamera
 -- CONFIG
 --------------------------------------------------
 
-local ORBIT_SPEED = 5000000
+local ORBIT_SPEED = 100
 local DEFAULT_ORBIT_DISTANCE = 3
 local ORBIT_DISTANCE = DEFAULT_ORBIT_DISTANCE
 
@@ -25,7 +27,9 @@ local LOCK_COLOR = Color3.fromRGB(50, 120, 220)
 -- VARIABLES
 --------------------------------------------------
 
-local selectedPlayer = nil
+local selectedTarget = nil
+local targetIsNPC = false
+
 local orbiting = false
 local lockOn = false
 local lockOnBeforeOrbit = false
@@ -34,6 +38,8 @@ local destroyed = false
 local lastDirection = nil
 local teleportTimer = 0
 local ESP = nil
+
+local showingNPCs = false
 
 --------------------------------------------------
 -- GUI
@@ -67,7 +73,7 @@ Header.BorderSizePixel = 0
 Header.Parent = Main
 
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -110, 1, 0)
+Title.Size = UDim2.new(1, -142, 1, 0)
 Title.Position = UDim2.new(0, 8, 0, 0)
 Title.BackgroundTransparency = 1
 Title.Text = "Orbit"
@@ -83,7 +89,7 @@ Title.Parent = Header
 
 local MinimizeButton = Instance.new("TextButton")
 MinimizeButton.Size = UDim2.new(0, 28, 0, 28)
-MinimizeButton.Position = UDim2.new(1, -96, 0, 6)
+MinimizeButton.Position = UDim2.new(1, -128, 0, 6)
 MinimizeButton.BackgroundColor3 = NORMAL_COLOR
 MinimizeButton.BackgroundTransparency = 0.05
 MinimizeButton.Text = "-"
@@ -94,12 +100,12 @@ MinimizeButton.BorderSizePixel = 0
 MinimizeButton.Parent = Header
 
 --------------------------------------------------
--- LOCK ON
+-- L
 --------------------------------------------------
 
 local LockButton = Instance.new("TextButton")
 LockButton.Size = UDim2.new(0, 28, 0, 28)
-LockButton.Position = UDim2.new(1, -64, 0, 6)
+LockButton.Position = UDim2.new(1, -96, 0, 6)
 LockButton.BackgroundColor3 = NORMAL_COLOR
 LockButton.BackgroundTransparency = 0.05
 LockButton.Text = "L"
@@ -108,6 +114,22 @@ LockButton.TextSize = 15
 LockButton.Font = Enum.Font.GothamBold
 LockButton.BorderSizePixel = 0
 LockButton.Parent = Header
+
+--------------------------------------------------
+-- N
+--------------------------------------------------
+
+local NPCButton = Instance.new("TextButton")
+NPCButton.Size = UDim2.new(0, 28, 0, 28)
+NPCButton.Position = UDim2.new(1, -64, 0, 6)
+NPCButton.BackgroundColor3 = NORMAL_COLOR
+NPCButton.BackgroundTransparency = 0.05
+NPCButton.Text = "N"
+NPCButton.TextColor3 = Color3.new(1, 1, 1)
+NPCButton.TextSize = 15
+NPCButton.Font = Enum.Font.GothamBold
+NPCButton.BorderSizePixel = 0
+NPCButton.Parent = Header
 
 --------------------------------------------------
 -- CLOSE
@@ -126,7 +148,7 @@ CloseButton.BorderSizePixel = 0
 CloseButton.Parent = Header
 
 --------------------------------------------------
--- PLAYER LIST
+-- LISTA
 --------------------------------------------------
 
 local PlayerList = Instance.new("ScrollingFrame")
@@ -145,7 +167,7 @@ UIListLayout.Padding = UDim.new(0, 3)
 UIListLayout.Parent = PlayerList
 
 --------------------------------------------------
--- DISTANCE
+-- DISTÂNCIA
 --------------------------------------------------
 
 local DistanceLabel = Instance.new("TextLabel")
@@ -190,10 +212,11 @@ OrbitButton.Font = Enum.Font.GothamBold
 OrbitButton.Parent = Main
 
 --------------------------------------------------
--- DISTANCE
+-- DISTÂNCIA
 --------------------------------------------------
 
 local function UpdateDistance()
+
 	local text = DistanceBox.Text
 
 	if text == nil or text == "" then
@@ -211,57 +234,108 @@ local function UpdateDistance()
 end
 
 DistanceBox.FocusLost:Connect(function()
+
 	UpdateDistance()
 
 	if DistanceBox.Text == "" then
 		DistanceBox.Text = tostring(DEFAULT_ORBIT_DISTANCE)
 	end
+
 end)
 
 --------------------------------------------------
--- HIGHLIGHT ESP
+-- ESP
 --------------------------------------------------
 
 local function RemoveESP()
+
 	if ESP then
 		ESP:Destroy()
 		ESP = nil
 	end
+
 end
 
-local function CreateESP(player)
+local function CreateESP(target)
+
 	RemoveESP()
 
-	if not player or not player.Character then
+	if not target then
+		return
+	end
+
+	local character
+
+	if target:IsA("Player") then
+		character = target.Character
+	elseif target:IsA("Model") then
+		character = target
+	end
+
+	if not character then
 		return
 	end
 
 	local highlight = Instance.new("Highlight")
 
-	highlight.Name = "SelectedPlayerESP"
-	highlight.Adornee = player.Character
+	highlight.Name = "SelectedTargetESP"
+	highlight.Adornee = character
 
-	-- Preenche o corpo inteiro
 	highlight.FillColor = Color3.fromRGB(255, 0, 0)
 	highlight.FillTransparency = 0.5
 
-	-- Contorno vermelho
 	highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
 	highlight.OutlineTransparency = 0
 
-	-- Continua aparecendo mesmo atrás de objetos
 	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 
-	highlight.Parent = player.Character
+	highlight.Parent = character
 
 	ESP = highlight
+
 end
 
 --------------------------------------------------
--- RESTAURAR CÂMERA NO PRÓPRIO PLAYER
+-- PEGAR CHARACTER DO ALVO
+--------------------------------------------------
+
+local function GetTargetCharacter()
+
+	if not selectedTarget then
+		return nil
+	end
+
+	if targetIsNPC then
+		return selectedTarget
+	end
+
+	return selectedTarget.Character
+end
+
+--------------------------------------------------
+-- PEGAR ROOT DO ALVO
+--------------------------------------------------
+
+local function GetTargetRoot()
+
+	local character = GetTargetCharacter()
+
+	if not character then
+		return nil
+	end
+
+	return character:FindFirstChild("HumanoidRootPart")
+		or character:FindFirstChild("UpperTorso")
+		or character:FindFirstChild("Torso")
+
+end
+
+--------------------------------------------------
+-- RESTAURAR CÂMERA
 --------------------------------------------------
 
 local function RestoreLocalCamera()
+
 	Camera = workspace.CurrentCamera
 
 	if not Camera then
@@ -273,33 +347,38 @@ local function RestoreLocalCamera()
 	local character = LocalPlayer.Character
 
 	if character then
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+		local humanoid =
+			character:FindFirstChildOfClass("Humanoid")
 
 		if humanoid then
 			Camera.CameraSubject = humanoid
 		end
+
 	end
+
 end
 
 --------------------------------------------------
--- VIEW NO PLAYER SELECIONADO
--- USADO DURANTE O ORBIT
+-- CÂMERA NO ALVO
 --------------------------------------------------
 
-local function ViewSelectedPlayer()
+local function ViewSelectedTarget()
+
 	Camera = workspace.CurrentCamera
 
-	if not Camera or not selectedPlayer then
+	if not Camera then
 		return
 	end
 
-	local character = selectedPlayer.Character
+	local character = GetTargetCharacter()
 
 	if not character then
 		return
 	end
 
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local humanoid =
+		character:FindFirstChildOfClass("Humanoid")
 
 	if not humanoid then
 		return
@@ -307,29 +386,24 @@ local function ViewSelectedPlayer()
 
 	Camera.CameraType = Enum.CameraType.Custom
 	Camera.CameraSubject = humanoid
+
 end
 
 --------------------------------------------------
--- ATIVAR LOCK ON
--- CÂMERA CONTINUA NO SEU PERSONAGEM
+-- LOCK ON
 --------------------------------------------------
 
 local function EnableLockOn()
+
 	if orbiting then
 		return
 	end
 
-	if not selectedPlayer then
+	if not selectedTarget then
 		return
 	end
 
-	local character = selectedPlayer.Character
-
-	if not character then
-		return
-	end
-
-	local root = character:FindFirstChild("HumanoidRootPart")
+	local root = GetTargetRoot()
 
 	if not root then
 		return
@@ -342,48 +416,67 @@ local function EnableLockOn()
 	Camera = workspace.CurrentCamera
 
 	if Camera then
+
 		Camera.CameraType = Enum.CameraType.Custom
 
 		local myCharacter = LocalPlayer.Character
 
 		if myCharacter then
+
 			local myHumanoid =
 				myCharacter:FindFirstChildOfClass("Humanoid")
 
 			if myHumanoid then
 				Camera.CameraSubject = myHumanoid
 			end
+
 		end
 	end
+
 end
 
 --------------------------------------------------
--- DESATIVAR LOCK ON
+-- DESATIVAR LOCK
 --------------------------------------------------
 
 local function DisableLockOn()
+
 	lockOn = false
 
 	LockButton.BackgroundColor3 = NORMAL_COLOR
 
 	RestoreLocalCamera()
+
 end
 
 --------------------------------------------------
--- SELECIONAR PLAYER
+-- SELECIONAR ALVO
 --------------------------------------------------
 
-local function SelectPlayer(player)
+local function SelectTarget(target, isNPC)
+
 	if orbiting then
 		return
 	end
 
-	selectedPlayer = player
+	selectedTarget = target
+	targetIsNPC = isNPC
 
 	for _, button in ipairs(PlayerList:GetChildren()) do
+
 		if button:IsA("TextButton") then
 
-			if button:GetAttribute("PlayerName") == player.Name then
+			local sameTarget = false
+
+			if isNPC then
+				sameTarget =
+					button:GetAttribute("NPCTarget") == target
+			else
+				sameTarget =
+					button:GetAttribute("PlayerTarget") == target.Name
+			end
+
+			if sameTarget then
 				button.TextColor3 = SELECTED_COLOR
 			else
 				button.TextColor3 = Color3.new(1, 1, 1)
@@ -392,30 +485,69 @@ local function SelectPlayer(player)
 		end
 	end
 
-	CreateESP(player)
+	CreateESP(target)
+
 end
 
 --------------------------------------------------
--- PLAYER LIST
+-- VERIFICAR NPC
+--------------------------------------------------
+
+local function IsNPC(model)
+
+	if not model:IsA("Model") then
+		return false
+	end
+
+	if Players:GetPlayerFromCharacter(model) then
+		return false
+	end
+
+	local humanoid =
+		model:FindFirstChildOfClass("Humanoid")
+
+	return humanoid ~= nil
+
+end
+
+--------------------------------------------------
+-- ATUALIZAR LISTA
 --------------------------------------------------
 
 local function UpdatePlayerList()
 
 	for _, child in ipairs(PlayerList:GetChildren()) do
+
 		if child:IsA("TextButton") then
 			child:Destroy()
 		end
+
 	end
 
-	local players = Players:GetPlayers()
+	--------------------------------------------------
+	-- NPCs
+	--------------------------------------------------
 
-	table.sort(players, function(a, b)
-		return a.Name:lower() < b.Name:lower()
-	end)
+	if showingNPCs then
 
-	for _, player in ipairs(players) do
+		Title.Text = "NPCs"
+		NPCButton.BackgroundColor3 = LOCK_COLOR
 
-		if player ~= LocalPlayer then
+		local npcs = {}
+
+		for _, object in ipairs(workspace:GetDescendants()) do
+
+			if IsNPC(object) then
+				table.insert(npcs, object)
+			end
+
+		end
+
+		table.sort(npcs, function(a, b)
+			return a.Name:lower() < b.Name:lower()
+		end)
+
+		for _, npc in ipairs(npcs) do
 
 			local Button = Instance.new("TextButton")
 
@@ -424,29 +556,105 @@ local function UpdatePlayerList()
 			Button.BackgroundTransparency = 0.05
 			Button.BorderSizePixel = 0
 
-			Button.Text = player.Name
+			Button.Text = npc.Name
 
-			if selectedPlayer == player then
+			if selectedTarget == npc
+				and targetIsNPC then
+
 				Button.TextColor3 = SELECTED_COLOR
+
 			else
-				Button.TextColor3 = Color3.new(1, 1, 1)
+
+				Button.TextColor3 =
+					Color3.new(1, 1, 1)
+
 			end
 
 			Button.TextSize = 13
 			Button.Font = Enum.Font.Gotham
-			Button:SetAttribute("PlayerName", player.Name)
+
 			Button.Parent = PlayerList
 
 			Button.Activated:Connect(function()
-				SelectPlayer(player)
+
+				SelectTarget(npc, true)
+
 			end)
+
 		end
+
+	--------------------------------------------------
+	-- PLAYERS
+	--------------------------------------------------
+
+	else
+
+		Title.Text = "Orbit"
+		NPCButton.BackgroundColor3 = NORMAL_COLOR
+
+		local players = Players:GetPlayers()
+
+		table.sort(players, function(a, b)
+			return a.Name:lower() < b.Name:lower()
+		end)
+
+		for _, player in ipairs(players) do
+
+			if player ~= LocalPlayer then
+
+				local Button = Instance.new("TextButton")
+
+				Button.Size =
+					UDim2.new(1, -8, 0, 30)
+
+				Button.BackgroundColor3 =
+					NORMAL_COLOR
+
+				Button.BackgroundTransparency = 0.05
+				Button.BorderSizePixel = 0
+
+				Button.Text = player.Name
+
+				if selectedTarget == player
+					and not targetIsNPC then
+
+					Button.TextColor3 =
+						SELECTED_COLOR
+
+				else
+
+					Button.TextColor3 =
+						Color3.new(1, 1, 1)
+
+				end
+
+				Button.TextSize = 13
+				Button.Font = Enum.Font.Gotham
+
+				Button.Parent = PlayerList
+
+				Button.Activated:Connect(function()
+
+					SelectTarget(player, false)
+
+				end)
+
+			end
+
+		end
+
 	end
 
 	task.wait()
 
 	PlayerList.CanvasSize =
-		UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 5)
+		UDim2.new(
+			0,
+			0,
+			0,
+			UIListLayout.AbsoluteContentSize.Y + 5
+		)
+
 end
 
 --------------------------------------------------
@@ -460,34 +668,33 @@ local function StopOrbit()
 	end
 
 	orbiting = false
+
 	lastDirection = nil
 	teleportTimer = 0
 
 	OrbitButton.Text = "Orbit: OFF"
 	OrbitButton.BackgroundColor3 = OFF_COLOR
 
-	--------------------------------------------------
-	-- RESTAURA O LOCK ON ANTERIOR
-	--------------------------------------------------
-
-	if lockOnBeforeOrbit and selectedPlayer then
+	if lockOnBeforeOrbit and selectedTarget then
 
 		lockOn = true
-		LockButton.BackgroundColor3 = LOCK_COLOR
+
+		LockButton.BackgroundColor3 =
+			LOCK_COLOR
 
 		RestoreLocalCamera()
 
 	else
 
 		lockOn = false
-		LockButton.BackgroundColor3 = NORMAL_COLOR
 
-		task.defer(function()
-			if not destroyed and not orbiting then
-				RestoreLocalCamera()
-			end
-		end)
+		LockButton.BackgroundColor3 =
+			NORMAL_COLOR
+
+		RestoreLocalCamera()
+
 	end
+
 end
 
 --------------------------------------------------
@@ -496,14 +703,16 @@ end
 
 local function StartOrbit()
 
-	if not selectedPlayer then
+	if not selectedTarget then
 
-		OrbitButton.Text = "Selecione alguém!"
+		OrbitButton.Text =
+			"Selecione alguém!"
 
 		task.delay(1, function()
 
 			if not destroyed and not orbiting then
-				OrbitButton.Text = "Orbit: OFF"
+				OrbitButton.Text =
+					"Orbit: OFF"
 			end
 
 		end)
@@ -511,14 +720,8 @@ local function StartOrbit()
 		return
 	end
 
-	local character = selectedPlayer.Character
-
-	if not character then
-		return
-	end
-
 	local targetRoot =
-		character:FindFirstChild("HumanoidRootPart")
+		GetTargetRoot()
 
 	if not targetRoot then
 		return
@@ -526,29 +729,27 @@ local function StartOrbit()
 
 	UpdateDistance()
 
-	--------------------------------------------------
-	-- SALVA O ESTADO DO LOCK ON
-	--------------------------------------------------
+	lockOnBeforeOrbit =
+		lockOn
 
-	lockOnBeforeOrbit = lockOn
-
-	-- Lock On fica temporariamente desligado
 	lockOn = false
-	LockButton.BackgroundColor3 = OFF_COLOR
+
+	LockButton.BackgroundColor3 =
+		OFF_COLOR
 
 	orbiting = true
+
 	lastDirection = nil
 	teleportTimer = 0
 
-	OrbitButton.Text = "Orbit: ON"
-	OrbitButton.BackgroundColor3 = ON_COLOR
+	OrbitButton.Text =
+		"Orbit: ON"
 
-	--------------------------------------------------
-	-- DURANTE O ORBIT:
-	-- CAMERA OLHA O PLAYER SELECIONADO
-	--------------------------------------------------
+	OrbitButton.BackgroundColor3 =
+		ON_COLOR
 
-	ViewSelectedPlayer()
+	ViewSelectedTarget()
+
 end
 
 --------------------------------------------------
@@ -566,12 +767,11 @@ OrbitButton.Activated:Connect(function()
 end)
 
 --------------------------------------------------
--- BOTÃO LOCK ON
+-- BOTÃO L
 --------------------------------------------------
 
 LockButton.Activated:Connect(function()
 
-	-- Não pode usar Lock On durante Orbit
 	if orbiting then
 		return
 	end
@@ -581,6 +781,33 @@ LockButton.Activated:Connect(function()
 	else
 		EnableLockOn()
 	end
+
+end)
+
+--------------------------------------------------
+-- BOTÃO N
+--------------------------------------------------
+
+NPCButton.Activated:Connect(function()
+
+	if orbiting then
+		return
+	end
+
+	showingNPCs =
+		not showingNPCs
+
+	RemoveESP()
+
+	selectedTarget = nil
+	targetIsNPC = false
+
+	lockOn = false
+
+	LockButton.BackgroundColor3 =
+		NORMAL_COLOR
+
+	UpdatePlayerList()
 
 end)
 
@@ -598,48 +825,61 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	-- LOCK ON
 	--------------------------------------------------
 
-	if lockOn and not orbiting and selectedPlayer then
-
-		local character = selectedPlayer.Character
+	if lockOn
+		and not orbiting
+		and selectedTarget then
 
 		local targetRoot =
-			character and
-			character:FindFirstChild("HumanoidRootPart")
+			GetTargetRoot()
 
 		if targetRoot then
 
-			Camera = workspace.CurrentCamera
+			Camera =
+				workspace.CurrentCamera
 
 			if Camera then
 
-				-- Continua seguindo VOCÊ
-				Camera.CameraType = Enum.CameraType.Custom
+				Camera.CameraType =
+					Enum.CameraType.Custom
 
-				local myCharacter = LocalPlayer.Character
+				local myCharacter =
+					LocalPlayer.Character
 
 				local myHumanoid =
-					myCharacter and
-					myCharacter:FindFirstChildOfClass("Humanoid")
+					myCharacter
+					and myCharacter:
+						FindFirstChildOfClass(
+							"Humanoid"
+						)
 
 				if myHumanoid then
-					if Camera.CameraSubject ~= myHumanoid then
-						Camera.CameraSubject = myHumanoid
+
+					if Camera.CameraSubject
+						~= myHumanoid then
+
+						Camera.CameraSubject =
+							myHumanoid
+
 					end
+
 				end
 
-				--------------------------------------------------
 				-- NÃO MOVE A CÂMERA.
-				-- APENAS FAZ ELA OLHAR PARA O ALVO.
-				--------------------------------------------------
+				-- SÓ FAZ ELA OLHAR PARA O ALVO.
 
-				local cameraPosition = Camera.CFrame.Position
+				local cameraPosition =
+					Camera.CFrame.Position
 
-				Camera.CFrame = CFrame.lookAt(
-					cameraPosition,
-					targetRoot.Position
-				)
+				Camera.CFrame =
+					CFrame.lookAt(
+						cameraPosition,
+						targetRoot.Position
+					)
+
 			end
+
 		end
+
 	end
 
 	--------------------------------------------------
@@ -650,31 +890,44 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		return
 	end
 
-	if not selectedPlayer then
+	if not selectedTarget then
+
 		StopOrbit()
+
 		return
 	end
 
-	local myCharacter = LocalPlayer.Character
-	local targetCharacter = selectedPlayer.Character
+	local myCharacter =
+		LocalPlayer.Character
 
-	if not myCharacter or not targetCharacter then
+	local targetCharacter =
+		GetTargetCharacter()
+
+	if not myCharacter
+		or not targetCharacter then
+
 		return
 	end
 
 	local myRoot =
-		myCharacter:FindFirstChild("HumanoidRootPart")
+		myCharacter:
+			FindFirstChild(
+				"HumanoidRootPart"
+			)
 
 	local targetRoot =
-		targetCharacter:FindFirstChild("HumanoidRootPart")
+		GetTargetRoot()
 
-	if not myRoot or not targetRoot then
+	if not myRoot
+		or not targetRoot then
+
 		return
 	end
 
 	teleportTimer += deltaTime
 
-	local interval = 0 / ORBIT_SPEED
+	local interval =
+		1 / ORBIT_SPEED
 
 	if teleportTimer < interval then
 		return
@@ -683,10 +936,15 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	teleportTimer = 0
 
 	local directions = {
+
 		targetRoot.CFrame.LookVector,
+
 		-targetRoot.CFrame.LookVector,
+
 		-targetRoot.CFrame.RightVector,
+
 		targetRoot.CFrame.RightVector
+
 	}
 
 	local availableDirections = {}
@@ -694,28 +952,40 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	for _, direction in ipairs(directions) do
 
 		if direction ~= lastDirection then
-			table.insert(availableDirections, direction)
+
+			table.insert(
+				availableDirections,
+				direction
+			)
+
 		end
 
 	end
 
 	local direction =
 		availableDirections[
-			math.random(1, #availableDirections)
+			math.random(
+				1,
+				#availableDirections
+			)
 		]
 
-	lastDirection = direction
+	lastDirection =
+		direction
 
-	local distance = ORBIT_DISTANCE
+	local distance =
+		ORBIT_DISTANCE
 
 	local teleportPosition =
-		targetRoot.Position +
-		direction * distance
-
-	myRoot.CFrame = CFrame.lookAt(
-		teleportPosition,
 		targetRoot.Position
-	)
+		+ direction * distance
+
+	myRoot.CFrame =
+		CFrame.lookAt(
+			teleportPosition,
+			targetRoot.Position
+		)
+
 end)
 
 --------------------------------------------------
@@ -736,19 +1006,23 @@ local function WatchPlayer(player)
 			return
 		end
 
-		if selectedPlayer == player then
+		if selectedTarget == player
+			and not targetIsNPC then
 
 			CreateESP(player)
 
-			if orbiting then
-				ViewSelectedPlayer()
-			end
 		end
+
 	end)
+
 end
 
-for _, player in ipairs(Players:GetPlayers()) do
+for _, player in ipairs(
+	Players:GetPlayers()
+) do
+
 	WatchPlayer(player)
+
 end
 
 Players.PlayerAdded:Connect(function(player)
@@ -757,9 +1031,13 @@ Players.PlayerAdded:Connect(function(player)
 
 	task.wait(0.2)
 
-	if not destroyed then
+	if not destroyed
+		and not showingNPCs then
+
 		UpdatePlayerList()
+
 	end
+
 end)
 
 --------------------------------------------------
@@ -768,11 +1046,12 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 
-	if selectedPlayer == player then
+	if selectedTarget == player
+		and not targetIsNPC then
 
 		RemoveESP()
 
-		selectedPlayer = nil
+		selectedTarget = nil
 
 		if orbiting then
 			StopOrbit()
@@ -781,17 +1060,22 @@ Players.PlayerRemoving:Connect(function(player)
 		if lockOn then
 			DisableLockOn()
 		end
+
 	end
 
 	task.wait(0.1)
 
-	if not destroyed then
+	if not destroyed
+		and not showingNPCs then
+
 		UpdatePlayerList()
+
 	end
+
 end)
 
 --------------------------------------------------
--- RESPAWN DO PRÓPRIO PLAYER
+-- RESPAWN
 --------------------------------------------------
 
 LocalPlayer.CharacterAdded:Connect(function()
@@ -803,10 +1087,15 @@ LocalPlayer.CharacterAdded:Connect(function()
 	end
 
 	if orbiting then
-		ViewSelectedPlayer()
+
+		ViewSelectedTarget()
+
 	else
+
 		RestoreLocalCamera()
+
 	end
+
 end)
 
 --------------------------------------------------
@@ -817,11 +1106,18 @@ local minimized = false
 
 MinimizeButton.Activated:Connect(function()
 
-	minimized = not minimized
+	minimized =
+		not minimized
 
 	if minimized then
 
-		Main.Size = UDim2.new(0, 210, 0, 40)
+		Main.Size =
+			UDim2.new(
+				0,
+				210,
+				0,
+				40
+			)
 
 		PlayerList.Visible = false
 		DistanceLabel.Visible = false
@@ -832,7 +1128,13 @@ MinimizeButton.Activated:Connect(function()
 
 	else
 
-		Main.Size = UDim2.new(0, 210, 0, 300)
+		Main.Size =
+			UDim2.new(
+				0,
+				210,
+				0,
+				300
+			)
 
 		PlayerList.Visible = true
 		DistanceLabel.Visible = true
@@ -840,6 +1142,7 @@ MinimizeButton.Activated:Connect(function()
 		OrbitButton.Visible = true
 
 		MinimizeButton.Text = "-"
+
 	end
 
 end)
@@ -871,7 +1174,28 @@ UpdatePlayerList()
 UpdateDistance()
 
 --------------------------------------------------
--- MANTER ESP NO PLAYER SELECIONADO
+-- ATUALIZAR NPCs
+--------------------------------------------------
+
+task.spawn(function()
+
+	while not destroyed do
+
+		task.wait(1)
+
+		if showingNPCs
+			and not orbiting then
+
+			UpdatePlayerList()
+
+		end
+
+	end
+
+end)
+
+--------------------------------------------------
+-- MANTER ESP
 --------------------------------------------------
 
 task.spawn(function()
@@ -880,17 +1204,21 @@ task.spawn(function()
 
 		task.wait(0.5)
 
-		if selectedPlayer then
+		if selectedTarget then
+
+			local character =
+				GetTargetCharacter()
 
 			if not ESP
 				or not ESP.Parent
-				or not selectedPlayer.Character
-				or ESP.Adornee ~= selectedPlayer.Character
-			then
-				CreateESP(selectedPlayer)
+				or ESP.Adornee ~= character then
+
+				CreateESP(selectedTarget)
+
 			end
 
 		end
+
 	end
 
 end)
